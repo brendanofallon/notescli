@@ -23,11 +23,15 @@ nn() {
 
 # 3. 'na' (Note Access): Open/Create a note
 na() {
-    local target="${NOTES_ROOT}/$1"
+    local name="$1"
+    if [ -z "$name" ]; then
+        name="$(date +"%Y-%m-%d_%H-%M-%S").md"
+    fi
+    
+    local target="${NOTES_ROOT}/$name"
     local editor="${EDITOR:-vim}"
     
-    if [ -d "$target" ]; then
-        # -G enables color on macOS ls
+    if [ -n "$1" ] && [ -d "$target" ]; then
         cd "$target" && ls -FG
     elif [ -f "$target" ]; then
         $editor "$target"
@@ -39,8 +43,33 @@ na() {
 
 # 4. 'ns' (Note Search): Search with color
 ns() {
-    # --color=always preserves color when piping or in functions
-    grep --color=always -ri "$1" "$NOTES_ROOT"
+    local editor="${EDITOR:-vim}"
+    local file_info
+    
+    # Use ripgrep to search and fzf to filter interactively
+    file_info=$(
+      rg --column --line-number --no-heading --color=always --smart-case "" "$NOTES_ROOT" | \
+      fzf --ansi \
+          --disabled \
+          --query "$*" \
+          --bind "change:reload:rg --column --line-number --no-heading --color=always --smart-case {q} \"$NOTES_ROOT\" || true" \
+          --delimiter : \
+          --preview 'bat --color=always --highlight-line {2} {1}' \
+          --preview-window 'up,60%,border-bottom,+{2}+3/3'
+    )
+    
+    if [[ -n "$file_info" ]]; then
+        local file=$(echo "$file_info" | cut -d: -f1)
+        local line=$(echo "$file_info" | cut -d: -f2)
+        local col=$(echo "$file_info" | cut -d: -f3)
+        
+        # Open editor at the specific line and column if it's vim-like
+        if [[ "$editor" =~ "vim" || "$editor" == "vi" || "$editor" == "nvim" ]]; then
+            $editor "+call cursor($line, $col)" "$file"
+        else
+            $editor "$file"
+        fi
+    fi
 }
 
 # 5. 'nl' (Note List): Tree view with forced color
